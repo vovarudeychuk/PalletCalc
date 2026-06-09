@@ -1,11 +1,42 @@
 import './styles.css';
 import * as THREE from 'three';
-import { createIcons } from 'lucide';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle,
+  Copy,
+  createIcons,
+  FileSpreadsheet,
+  Layout,
+  Orbit,
+  Package,
+  PackageSearch,
+  RotateCcw,
+  SquareDashed,
+} from 'lucide';
 import { registerSW } from 'virtual:pwa-register';
 
 registerSW({ immediate: true });
 
-createIcons();
+const appIcons = {
+  package: Package,
+  'rotate-ccw': RotateCcw,
+  layout: Layout,
+  'package-search': PackageSearch,
+  'arrow-left': ArrowLeft,
+  'arrow-right': ArrowRight,
+  orbit: Orbit,
+  'file-spreadsheet': FileSpreadsheet,
+  copy: Copy,
+  'check-circle': CheckCircle,
+  check: Check,
+  'square-dashed': SquareDashed,
+};
+
+function refreshIcons() {
+  createIcons({ icons: appIcons });
+}
 
 let currentStep = 1;
 
@@ -297,7 +328,7 @@ function setStep(step) {
     btnBack.classList.remove('hidden');
     btnNext.innerHTML = 'Complete <i data-lucide="check" class="w-4 h-4"></i>';
   }
-  createIcons();
+  refreshIcons();
 }
 
 btnNext.addEventListener('click', () => {
@@ -442,7 +473,7 @@ function renderFallback2D(layers, boxesPerLayer, missingBoxes, hasPartial, parti
     gridContainer.appendChild(layerRow);
   }
   twodContainer.appendChild(gridContainer);
-  createIcons();
+  refreshIcons();
 }
 
 function rebuild3DBoxes(layers, boxesPerLayer, missingBoxes, hasPartial, partialUnits, unitsPerBox) {
@@ -566,6 +597,7 @@ btnResetFields.addEventListener('click', () => {
   window.location.reload();
 });
 
+refreshIcons();
 init3D();
 calculate();
 setStep(1);
