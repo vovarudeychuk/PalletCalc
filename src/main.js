@@ -20,18 +20,18 @@ import { registerSW } from 'virtual:pwa-register';
 registerSW({ immediate: true });
 
 const appIcons = {
-  package: Package,
-  'rotate-ccw': RotateCcw,
-  layout: Layout,
-  'package-search': PackageSearch,
-  'arrow-left': ArrowLeft,
-  'arrow-right': ArrowRight,
-  orbit: Orbit,
-  'file-spreadsheet': FileSpreadsheet,
-  copy: Copy,
-  'check-circle': CheckCircle,
-  check: Check,
-  'square-dashed': SquareDashed,
+  Package,
+  RotateCcw,
+  Layout,
+  PackageSearch,
+  ArrowLeft,
+  ArrowRight,
+  Orbit,
+  FileSpreadsheet,
+  Copy,
+  CheckCircle,
+  Check,
+  SquareDashed,
 };
 
 function refreshIcons() {
