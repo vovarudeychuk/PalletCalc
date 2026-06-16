@@ -72,6 +72,116 @@ const resTotalBoxes = document.getElementById('res-total-boxes');
 const resUnitsBox = document.getElementById('res-units-box');
 const resTotalUnits = document.getElementById('res-total-units');
 
+const btnShowCalc = document.getElementById('btn-show-calc');
+const calcBreakdown = document.getElementById('calc-breakdown');
+const calcBreakdownContent = document.getElementById('calc-breakdown-content');
+
+let calcBreakdownOpen = false;
+
+function fmt(n) {
+  return n.toLocaleString('en-US');
+}
+
+function nint(value, fallback = 0) {
+  const n = Number.parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clampInt(n, min, max) {
+  return Math.min(max, Math.max(min, nint(n, min)));
+}
+
+function renderCalcBreakdownCompact(data) {
+  if (!calcBreakdownContent) return;
+
+  const {
+    fullPallets,
+    standardLayers,
+    boxesPerLayer,
+    unitsPerBox,
+    activeLayers,
+    hasMissing,
+    missingBoxes,
+    hasPartial,
+    partialUnits,
+    boxesPerStandardPallet,
+    unitsPerStandardPallet,
+    totalUnitsFromFullPallets,
+    boxesPerActivePallet,
+    currentPalletFullBoxes,
+    currentPalletUnits,
+    finalTotalUnits,
+  } = data;
+
+  const missingVal = hasMissing ? missingBoxes : 0;
+  const partialSlot = hasPartial ? 1 : 0;
+  const partialVal = hasPartial ? partialUnits : 0;
+
+  const chip = (bind, value, min, max) =>
+    `<input data-bind="${bind}" inputmode="numeric" class="w-12 bg-slate-900/70 border border-slate-700 rounded-md px-1.5 py-0.5 text-[10px] font-black text-blue-200 focus:outline-none focus:border-blue-500 text-center" type="number" min="${min}" max="${max}" value="${value}">`;
+
+  calcBreakdownContent.innerHTML = `
+    <div class="space-y-2">
+      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Units</div>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="text-slate-500">=</span>
+        <span class="text-blue-300 font-black">${fmt(finalTotalUnits)}</span>
+        <span class="text-slate-500">pcs</span>
+      </div>
+
+      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Formula (editable)</div>
+
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="text-slate-400">Full:</span>
+        ${chip('fullPallets', fullPallets, 0, 100)}
+        <span class="text-slate-500">×</span>
+        <span class="text-slate-400">(</span>
+        ${chip('standardLayers', standardLayers, 1, 6)}
+        <span class="text-slate-500">×</span>
+        ${chip('boxesPerLayer', boxesPerLayer, 4, 9)}
+        <span class="text-slate-500">×</span>
+        ${chip('unitsPerBox', unitsPerBox, 1, 400)}
+        <span class="text-slate-400">)</span>
+        <span class="text-slate-500">+</span>
+        <span class="text-slate-400">Active:</span>
+        <span class="text-slate-400">(</span>
+        ${chip('activeLayers', activeLayers, 1, 6)}
+        <span class="text-slate-500">×</span>
+        ${chip('boxesPerLayer', boxesPerLayer, 4, 9)}
+        <span class="text-slate-500">−</span>
+        ${chip('missingBoxes', missingVal, 0, 50)}
+        <span class="text-slate-500">−</span>
+        <span class="text-slate-300 font-black text-[10px] px-1">${partialSlot}</span>
+        <span class="text-slate-400">)</span>
+        <span class="text-slate-500">×</span>
+        ${chip('unitsPerBox', unitsPerBox, 1, 400)}
+        <span class="text-slate-500">+</span>
+        ${chip('partialUnits', partialVal, 0, Math.max(0, unitsPerBox - 1))}
+      </div>
+
+      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Computed</div>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-slate-900/60 border border-slate-800 rounded-md p-2">
+          <div class="text-[9px] text-slate-500">standard</div>
+          <div class="text-[10px] text-slate-200 font-black">${standardLayers}×${boxesPerLayer}=${boxesPerStandardPallet} boxes</div>
+          <div class="text-[10px] text-slate-200 font-black">${boxesPerStandardPallet}×${unitsPerBox}=${fmt(unitsPerStandardPallet)} pcs</div>
+          <div class="text-[10px] text-slate-500">${fullPallets}×${fmt(unitsPerStandardPallet)}=${fmt(totalUnitsFromFullPallets)} pcs</div>
+        </div>
+        <div class="bg-slate-900/60 border border-slate-800 rounded-md p-2">
+          <div class="text-[9px] text-slate-500">active</div>
+          <div class="text-[10px] text-slate-200 font-black">${activeLayers}×${boxesPerLayer}=${boxesPerActivePallet} slots</div>
+          <div class="text-[10px] text-slate-200 font-black">${boxesPerActivePallet}−${missingVal}−${partialSlot}=${currentPalletFullBoxes} full boxes</div>
+          <div class="text-[10px] text-slate-500">${currentPalletFullBoxes}×${unitsPerBox}+${partialVal}=${fmt(currentPalletUnits)} pcs</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function updateCalcBreakdownPanel(data) {
+  renderCalcBreakdownCompact(data);
+}
+
 const threeContainer = document.getElementById('three-container');
 const twodContainer = document.getElementById('twod-container');
 
@@ -502,10 +612,36 @@ function calculate() {
   }
   const finalTotalPallets = (fullPallets + currentPalletRatio).toFixed(2);
 
+  const breakdownData = {
+    fullPallets,
+    standardLayers,
+    boxesPerLayer,
+    unitsPerBox,
+    activeLayers,
+    hasMissing,
+    missingBoxes,
+    hasPartial,
+    partialUnits,
+    boxesPerStandardPallet,
+    unitsPerStandardPallet,
+    totalUnitsFromFullPallets,
+    totalBoxesFromFullPallets,
+    boxesPerActivePallet,
+    currentPalletFullBoxes,
+    currentPalletUnits,
+    activePalletBoxesCount,
+    finalTotalBoxes,
+    finalTotalUnits,
+    finalTotalPallets,
+    currentPalletRatio,
+  };
+
   resTotalPallets.innerText = finalTotalPallets;
   resTotalBoxes.innerText = finalTotalBoxes;
   resUnitsBox.innerText = unitsPerBox;
   resTotalUnits.innerText = finalTotalUnits.toLocaleString('en-US');
+
+  updateCalcBreakdownPanel(breakdownData);
 
   renderFullPalletsStrip(fullPallets, standardLayers, boxesPerLayer);
   updatePresetActiveStates();
@@ -658,6 +794,81 @@ checkPartial.addEventListener('change', (e) => {
   calculate();
 });
 inputPartialUnits.addEventListener('input', calculate);
+
+btnShowCalc?.addEventListener('click', () => {
+  calcBreakdownOpen = !calcBreakdownOpen;
+  calcBreakdown?.classList.toggle('hidden', !calcBreakdownOpen);
+  btnShowCalc.classList.toggle('bg-blue-500/30', calcBreakdownOpen);
+  btnShowCalc.classList.toggle('text-blue-200', calcBreakdownOpen);
+});
+
+// Allow editing numbers directly inside the Calc panel.
+calcBreakdownContent?.addEventListener('input', (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  const bind = target.dataset.bind;
+  if (!bind) return;
+
+  const v = Number.parseInt(target.value || '0', 10) || 0;
+
+  if (bind === 'fullPallets') {
+    inputFullPallets.value = String(Math.max(0, Math.min(100, v)));
+    rangeFullPallets.value = String(Math.max(0, Math.min(20, v)));
+    inputFullPallets.dispatchEvent(new Event('input'));
+    return;
+  }
+
+  if (bind === 'standardLayers') {
+    inputLayers.value = String(Math.max(1, Math.min(6, v)));
+    inputLayers.dispatchEvent(new Event('input'));
+    return;
+  }
+
+  if (bind === 'activeLayers') {
+    inputActiveLayers.value = String(Math.max(1, Math.min(6, v)));
+    inputActiveLayers.dispatchEvent(new Event('input'));
+    return;
+  }
+
+  if (bind === 'boxesPerLayer') {
+    inputBoxes.value = String(Math.max(4, Math.min(9, v)));
+    inputBoxes.dispatchEvent(new Event('input'));
+    return;
+  }
+
+  if (bind === 'unitsPerBox') {
+    const next = Math.max(1, Math.min(400, v));
+    inputUnits.value = String(next);
+    inputUnitsNum.value = String(next);
+    inputUnits.dispatchEvent(new Event('input'));
+    return;
+  }
+
+  if (bind === 'missingBoxes') {
+    const next = Math.max(0, v);
+    checkMissing.checked = next > 0;
+    missingControlWrap.classList.toggle('opacity-40', !checkMissing.checked);
+    missingControlWrap.classList.toggle('pointer-events-none', !checkMissing.checked);
+    inputMissingCount.value = String(Math.max(1, Math.min(parseInt(inputMissingCount.max, 10) || 50, next || 1)));
+    if (!checkMissing.checked) {
+      inputMissingCount.value = '1';
+    }
+    calculate();
+    return;
+  }
+
+  if (bind === 'partialUnits') {
+    const next = Math.max(0, v);
+    checkPartial.checked = next > 0;
+    partialControlWrap.classList.toggle('opacity-40', !checkPartial.checked);
+    partialControlWrap.classList.toggle('pointer-events-none', !checkPartial.checked);
+    inputPartialUnits.value = String(Math.max(1, Math.min(parseInt(inputPartialUnits.max, 10) || 399, next || 1)));
+    if (!checkPartial.checked) {
+      inputPartialUnits.value = '1';
+    }
+    calculate();
+  }
+});
 
 async function showToast() {
   const toast = document.getElementById('toast');
