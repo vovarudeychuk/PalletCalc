@@ -75,8 +75,101 @@ const resTotalUnits = document.getElementById('res-total-units');
 const threeContainer = document.getElementById('three-container');
 const twodContainer = document.getElementById('twod-container');
 
-const fullPalletsBadge = document.getElementById('full-pallets-badge');
-const fullPalletsBadgeCount = document.getElementById('full-pallets-badge-count');
+const fullPalletsStrip = document.getElementById('full-pallets-strip');
+const fullPalletsStripGrid = document.getElementById('full-pallets-strip-grid');
+const fullPalletsStripCount = document.getElementById('full-pallets-strip-count');
+function updatePresetActiveStates() {
+  const boxesValue = parseInt(inputBoxes.value, 10);
+  document.querySelectorAll('.preset-boxes-btn').forEach((btn) => {
+    const active = boxesValue === parseInt(btn.dataset.presetBoxes, 10);
+    btn.classList.toggle('bg-blue-600', active);
+    btn.classList.toggle('border-blue-500', active);
+    btn.classList.toggle('text-white', active);
+    btn.classList.toggle('bg-slate-900', !active);
+    btn.classList.toggle('border-slate-700', !active);
+    btn.classList.toggle('text-slate-400', !active);
+  });
+
+  const unitsValue = parseInt(inputUnits.value, 10);
+  document.querySelectorAll('.preset-units-btn').forEach((btn) => {
+    const active = unitsValue === parseInt(btn.dataset.presetUnits, 10);
+    btn.classList.toggle('bg-blue-600', active);
+    btn.classList.toggle('border-blue-500', active);
+    btn.classList.toggle('text-white', active);
+    btn.classList.toggle('bg-slate-900', !active);
+    btn.classList.toggle('border-slate-700', !active);
+    btn.classList.toggle('text-slate-400', !active);
+  });
+}
+
+function buildMiniPalletLayers(layers, boxesPerLayer) {
+  const displayLayers = Math.min(layers, 3);
+  const boxDots = Math.min(boxesPerLayer, 6);
+  let html = '';
+  for (let l = 0; l < displayLayers; l++) {
+    html += '<div class="flex justify-center gap-px">';
+    for (let b = 0; b < boxDots; b++) {
+      html += '<span class="w-1 h-1 rounded-[1px] bg-[#cd813f]"></span>';
+    }
+    html += '</div>';
+  }
+  if (layers > displayLayers) {
+    html += '<div class="text-[6px] text-center text-slate-600 leading-none">⋯</div>';
+  }
+  return html;
+}
+
+function renderFullPalletsStrip(count, layers, boxesPerLayer) {
+  if (!fullPalletsStrip || !fullPalletsStripGrid) return;
+
+  if (count <= 0) {
+    fullPalletsStrip.classList.add('hidden');
+    fullPalletsStripGrid.innerHTML = '';
+    return;
+  }
+
+  fullPalletsStrip.classList.remove('hidden');
+  fullPalletsStripCount.textContent = count;
+  fullPalletsStripGrid.innerHTML = '';
+
+  const displayCount = Math.min(count, 40);
+  for (let i = 1; i <= displayCount; i++) {
+    const pallet = document.createElement('div');
+    pallet.className = 'relative flex flex-col items-center w-12 shrink-0';
+    pallet.title = `Full pallet #${i}`;
+    pallet.innerHTML = `
+      <span class="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 rounded-full bg-blue-600 text-[8px] font-black text-white flex items-center justify-center border border-blue-400/50 z-10 shadow">${i}</span>
+      <div class="w-full bg-slate-900/90 rounded-lg border border-emerald-500/30 p-1 flex flex-col gap-0.5 shadow-sm">
+        ${buildMiniPalletLayers(layers, boxesPerLayer)}
+        <div class="h-1 bg-[#9a6229] rounded-sm w-full border border-[#784817]/50"></div>
+      </div>
+    `;
+    fullPalletsStripGrid.appendChild(pallet);
+  }
+
+  if (count > displayCount) {
+    const more = document.createElement('div');
+    more.className = 'flex items-center justify-center w-12 h-14 rounded-lg border border-dashed border-slate-700 text-[9px] font-bold text-slate-500 shrink-0';
+    more.textContent = `+${count - displayCount}`;
+    fullPalletsStripGrid.appendChild(more);
+  }
+}
+
+document.querySelectorAll('.preset-boxes-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    inputBoxes.value = btn.dataset.presetBoxes;
+    inputBoxes.dispatchEvent(new Event('input'));
+  });
+});
+
+document.querySelectorAll('.preset-units-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    inputUnits.value = btn.dataset.presetUnits;
+    inputUnitsNum.value = btn.dataset.presetUnits;
+    inputUnits.dispatchEvent(new Event('input'));
+  });
+});
+
 const btnCopyReport = document.getElementById('btn-copy-report');
 const btnResetFields = document.getElementById('btn-reset-fields');
 const btnOrbit = document.getElementById('btn-orbit');
@@ -414,12 +507,8 @@ function calculate() {
   resUnitsBox.innerText = unitsPerBox;
   resTotalUnits.innerText = finalTotalUnits.toLocaleString('en-US');
 
-  if (fullPallets > 0) {
-    fullPalletsBadge.classList.remove('hidden');
-    fullPalletsBadgeCount.innerText = fullPallets;
-  } else {
-    fullPalletsBadge.classList.add('hidden');
-  }
+  renderFullPalletsStrip(fullPallets, standardLayers, boxesPerLayer);
+  updatePresetActiveStates();
 
   const displayLayers = currentStep === 1 ? standardLayers : activeLayers;
   const displayMissing = currentStep === 1 ? 0 : missingBoxes;
