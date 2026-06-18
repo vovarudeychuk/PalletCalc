@@ -3,17 +3,27 @@ import * as THREE from 'three';
 import {
   ArrowLeft,
   ArrowRight,
+  Box,
+  Calculator,
   Check,
   CheckCircle,
   Copy,
   createIcons,
   FileSpreadsheet,
+  Hash,
+  Layers,
   Layout,
+  Minus,
   Orbit,
   Package,
+  PackageCheck,
+  PackagePlus,
   PackageSearch,
+  PackageX,
+  Plus,
   RotateCcw,
   SquareDashed,
+  X,
 } from 'lucide';
 import { registerSW } from 'virtual:pwa-register';
 
@@ -32,6 +42,16 @@ const appIcons = {
   CheckCircle,
   Check,
   SquareDashed,
+  Layers,
+  Box,
+  Hash,
+  PackageCheck,
+  PackagePlus,
+  PackageX,
+  Calculator,
+  Minus,
+  Plus,
+  X,
 };
 
 function refreshIcons() {
@@ -50,11 +70,18 @@ const btnNext = document.getElementById('btn-next');
 const inputFullPallets = document.getElementById('input-full-pallets');
 const rangeFullPallets = document.getElementById('range-full-pallets');
 const inputLayers = document.getElementById('input-layers');
+const inputLayersNum = document.getElementById('input-layers-num');
 const inputBoxes = document.getElementById('input-boxes');
+const inputBoxesNum = document.getElementById('input-boxes-num');
 const inputUnits = document.getElementById('input-units');
 const inputUnitsNum = document.getElementById('input-units-num');
 const inputActiveLayers = document.getElementById('input-active-layers');
-const valActiveLayers = document.getElementById('val-active-layers');
+const inputActiveLayersNum = document.getElementById('input-active-layers-num');
+
+const LIMITS = {
+  layers: { min: 1, max: 9999, sliderDefaultMax: 12 },
+  boxes: { min: 1, max: 9999, sliderDefaultMax: 12 },
+};
 
 const checkMissing = document.getElementById('check-missing');
 const missingControlWrap = document.getElementById('missing-control-wrap');
@@ -64,8 +91,12 @@ const checkPartial = document.getElementById('check-partial');
 const partialControlWrap = document.getElementById('partial-control-wrap');
 const inputPartialUnits = document.getElementById('input-partial-units');
 
-const valLayers = document.getElementById('val-layers');
-const valBoxes = document.getElementById('val-boxes');
+const checkIncludeActive = document.getElementById('check-include-active');
+const toggleIncludeActive = document.getElementById('toggle-include-active');
+const activePalletSection = document.getElementById('active-pallet-section');
+const includeActiveHint = document.getElementById('include-active-hint');
+const modeBadge = document.getElementById('mode-badge');
+const previewEmptyMsg = document.getElementById('preview-empty-msg');
 
 const resTotalPallets = document.getElementById('res-total-pallets');
 const resTotalBoxes = document.getElementById('res-total-boxes');
@@ -82,19 +113,55 @@ function fmt(n) {
   return n.toLocaleString('en-US');
 }
 
-function nint(value, fallback = 0) {
+function clampCount(value, min, max) {
   const n = Number.parseInt(String(value), 10);
-  return Number.isFinite(n) ? n : fallback;
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
-function clampInt(n, min, max) {
-  return Math.min(max, Math.max(min, nint(n, min)));
+function readCount(numInput, slider, min, max) {
+  if (numInput) return clampCount(numInput.value, min, max);
+  return clampCount(slider?.value, min, max);
+}
+
+function syncSliderToValue(slider, value, defaultMax) {
+  if (!slider) return;
+  const v = Number.parseInt(String(value), 10) || 1;
+  if (v > Number.parseInt(slider.max, 10)) slider.max = String(v);
+  if (v <= defaultMax && Number.parseInt(slider.max, 10) > defaultMax) slider.max = String(defaultMax);
+  slider.value = String(Math.min(Number.parseInt(slider.max, 10), v));
+}
+
+function setCountPair(numInput, slider, value, limits) {
+  const v = clampCount(value, limits.min, limits.max);
+  if (numInput) numInput.value = String(v);
+  syncSliderToValue(slider, v, limits.sliderDefaultMax);
+}
+
+function bindCountPair(numInput, slider, limits, onChange) {
+  if (!numInput || !slider) return;
+
+  slider.addEventListener('input', () => {
+    numInput.value = slider.value;
+    onChange();
+  });
+
+  numInput.addEventListener('input', () => {
+    setCountPair(numInput, slider, numInput.value, limits);
+    onChange();
+  });
+
+  numInput.addEventListener('blur', () => {
+    setCountPair(numInput, slider, numInput.value, limits);
+    onChange();
+  });
 }
 
 function renderCalcBreakdownCompact(data) {
   if (!calcBreakdownContent) return;
 
   const {
+    includeActive,
     fullPallets,
     standardLayers,
     boxesPerLayer,
@@ -118,64 +185,49 @@ function renderCalcBreakdownCompact(data) {
   const partialVal = hasPartial ? partialUnits : 0;
 
   const chip = (bind, value, min, max) =>
-    `<input data-bind="${bind}" inputmode="numeric" class="w-12 bg-slate-900/70 border border-slate-700 rounded-md px-1.5 py-0.5 text-[10px] font-black text-blue-200 focus:outline-none focus:border-blue-500 text-center" type="number" min="${min}" max="${max}" value="${value}">`;
+    `<input data-bind="${bind}" inputmode="numeric" class="calc-num" type="number" min="${min}" value="${value}">`;
+
+  const icon = (name) => `<i data-lucide="${name}" class="calc-icon"></i>`;
+
+  const fullPart =
+    fullPallets > 0
+      ? `${chip('fullPallets', fullPallets, 0, 9999)} ${icon('x')} (${chip('standardLayers', standardLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 400)})`
+      : '';
+
+  const activePart = includeActive
+    ? `<span class="text-slate-500">${icon('plus')}</span> (${chip('activeLayers', activeLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('minus')} ${chip('missingBoxes', missingVal, 0, 9999)} ${icon('minus')} <span class="text-slate-300 font-black">${partialSlot}</span>) ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 400)} ${icon('plus')} ${chip('partialUnits', partialVal, 0, Math.max(0, unitsPerBox - 1))}`
+    : '';
 
   calcBreakdownContent.innerHTML = `
-    <div class="space-y-2">
-      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Units</div>
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-slate-500">=</span>
-        <span class="text-blue-300 font-black">${fmt(finalTotalUnits)}</span>
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center gap-1.5 justify-center py-1">
+        <span class="text-blue-300 font-black text-sm tabular-nums">${fmt(finalTotalUnits)}</span>
         <span class="text-slate-500">pcs</span>
+        <span class="text-slate-600 mx-1">=</span>
+        ${fullPart}
+        ${activePart}
       </div>
 
-      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Formula (editable)</div>
-
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-slate-400">Full:</span>
-        ${chip('fullPallets', fullPallets, 0, 100)}
-        <span class="text-slate-500">×</span>
-        <span class="text-slate-400">(</span>
-        ${chip('standardLayers', standardLayers, 1, 6)}
-        <span class="text-slate-500">×</span>
-        ${chip('boxesPerLayer', boxesPerLayer, 4, 9)}
-        <span class="text-slate-500">×</span>
-        ${chip('unitsPerBox', unitsPerBox, 1, 400)}
-        <span class="text-slate-400">)</span>
-        <span class="text-slate-500">+</span>
-        <span class="text-slate-400">Active:</span>
-        <span class="text-slate-400">(</span>
-        ${chip('activeLayers', activeLayers, 1, 6)}
-        <span class="text-slate-500">×</span>
-        ${chip('boxesPerLayer', boxesPerLayer, 4, 9)}
-        <span class="text-slate-500">−</span>
-        ${chip('missingBoxes', missingVal, 0, 50)}
-        <span class="text-slate-500">−</span>
-        <span class="text-slate-300 font-black text-[10px] px-1">${partialSlot}</span>
-        <span class="text-slate-400">)</span>
-        <span class="text-slate-500">×</span>
-        ${chip('unitsPerBox', unitsPerBox, 1, 400)}
-        <span class="text-slate-500">+</span>
-        ${chip('partialUnits', partialVal, 0, Math.max(0, unitsPerBox - 1))}
-      </div>
-
-      <div class="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Computed</div>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="bg-slate-900/60 border border-slate-800 rounded-md p-2">
-          <div class="text-[9px] text-slate-500">standard</div>
-          <div class="text-[10px] text-slate-200 font-black">${standardLayers}×${boxesPerLayer}=${boxesPerStandardPallet} boxes</div>
-          <div class="text-[10px] text-slate-200 font-black">${boxesPerStandardPallet}×${unitsPerBox}=${fmt(unitsPerStandardPallet)} pcs</div>
-          <div class="text-[10px] text-slate-500">${fullPallets}×${fmt(unitsPerStandardPallet)}=${fmt(totalUnitsFromFullPallets)} pcs</div>
+      <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+        <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-2">
+          <div class="flex items-center gap-1 text-[9px] text-emerald-500 mb-1">${icon('package-check')} full</div>
+          <div class="text-[10px] text-slate-200 tabular-nums">${standardLayers}×${boxesPerLayer}×${unitsPerBox}</div>
+          <div class="text-[10px] text-slate-400 tabular-nums">${fullPallets}×${fmt(unitsPerStandardPallet)}=${fmt(totalUnitsFromFullPallets)}</div>
         </div>
-        <div class="bg-slate-900/60 border border-slate-800 rounded-md p-2">
-          <div class="text-[9px] text-slate-500">active</div>
-          <div class="text-[10px] text-slate-200 font-black">${activeLayers}×${boxesPerLayer}=${boxesPerActivePallet} slots</div>
-          <div class="text-[10px] text-slate-200 font-black">${boxesPerActivePallet}−${missingVal}−${partialSlot}=${currentPalletFullBoxes} full boxes</div>
-          <div class="text-[10px] text-slate-500">${currentPalletFullBoxes}×${unitsPerBox}+${partialVal}=${fmt(currentPalletUnits)} pcs</div>
+        <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 ${includeActive ? '' : 'opacity-40'}">
+          <div class="flex items-center gap-1 text-[9px] text-amber-500 mb-1">${icon('package-plus')} active</div>
+          ${
+            includeActive
+              ? `<div class="text-[10px] text-slate-200 tabular-nums">${activeLayers}×${boxesPerLayer}−${missingVal}−${partialSlot}</div>
+                 <div class="text-[10px] text-slate-400 tabular-nums">${currentPalletFullBoxes}×${unitsPerBox}+${partialVal}=${fmt(currentPalletUnits)}</div>`
+              : `<div class="text-[10px] text-slate-500">off</div>`
+          }
         </div>
       </div>
     </div>
   `;
+
+  refreshIcons();
 }
 
 function updateCalcBreakdownPanel(data) {
@@ -189,27 +241,30 @@ const fullPalletsStrip = document.getElementById('full-pallets-strip');
 const fullPalletsStripGrid = document.getElementById('full-pallets-strip-grid');
 const fullPalletsStripCount = document.getElementById('full-pallets-strip-count');
 function updatePresetActiveStates() {
-  const boxesValue = parseInt(inputBoxes.value, 10);
+  const boxesValue = readCount(inputBoxesNum, inputBoxes, LIMITS.boxes.min, LIMITS.boxes.max);
   document.querySelectorAll('.preset-boxes-btn').forEach((btn) => {
-    const active = boxesValue === parseInt(btn.dataset.presetBoxes, 10);
-    btn.classList.toggle('bg-blue-600', active);
-    btn.classList.toggle('border-blue-500', active);
-    btn.classList.toggle('text-white', active);
-    btn.classList.toggle('bg-slate-900', !active);
-    btn.classList.toggle('border-slate-700', !active);
-    btn.classList.toggle('text-slate-400', !active);
+    btn.classList.toggle('active', boxesValue === parseInt(btn.dataset.presetBoxes, 10));
   });
 
   const unitsValue = parseInt(inputUnits.value, 10);
   document.querySelectorAll('.preset-units-btn').forEach((btn) => {
-    const active = unitsValue === parseInt(btn.dataset.presetUnits, 10);
-    btn.classList.toggle('bg-blue-600', active);
-    btn.classList.toggle('border-blue-500', active);
-    btn.classList.toggle('text-white', active);
-    btn.classList.toggle('bg-slate-900', !active);
-    btn.classList.toggle('border-slate-700', !active);
-    btn.classList.toggle('text-slate-400', !active);
+    btn.classList.toggle('active', unitsValue === parseInt(btn.dataset.presetUnits, 10));
   });
+}
+
+function setIncludeActive(enabled) {
+  checkIncludeActive.checked = enabled;
+  toggleIncludeActive.classList.toggle('on', enabled);
+  toggleIncludeActive.classList.toggle('off', !enabled);
+  toggleIncludeActive.setAttribute('aria-checked', String(enabled));
+  activePalletSection?.classList.toggle('section-disabled', !enabled);
+  if (includeActiveHint) {
+    includeActiveHint.textContent = enabled ? 'Active pallet included in total' : 'Counting full pallets only';
+  }
+  if (modeBadge) {
+    modeBadge.textContent = enabled ? 'Full + Active' : 'Full only';
+    modeBadge.className = `mode-badge ${enabled ? 'full-active' : 'full-only'}`;
+  }
 }
 
 function buildMiniPalletLayers(layers, boxesPerLayer) {
@@ -267,8 +322,8 @@ function renderFullPalletsStrip(count, layers, boxesPerLayer) {
 
 document.querySelectorAll('.preset-boxes-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    inputBoxes.value = btn.dataset.presetBoxes;
-    inputBoxes.dispatchEvent(new Event('input'));
+    setCountPair(inputBoxesNum, inputBoxes, btn.dataset.presetBoxes, LIMITS.boxes);
+    calculate();
   });
 });
 
@@ -517,27 +572,26 @@ btnOrbit.addEventListener('click', () => {
 function setStep(step) {
   currentStep = step;
   if (currentStep === 1) {
-    stepTab1.className = 'py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 bg-blue-600 text-white shadow';
-    stepTab2.className = 'py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200';
+    stepTab1.className = 'step-nav-btn active';
+    stepTab2.className = 'step-nav-btn inactive';
     step1Content.classList.remove('hidden');
     step2Content.classList.add('hidden');
     btnBack.classList.add('hidden');
     btnNext.innerHTML = 'Continue <i data-lucide="arrow-right" class="w-4 h-4"></i>';
   } else {
-    stepTab1.className = 'py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200';
-    stepTab2.className = 'py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 bg-blue-600 text-white shadow';
+    stepTab1.className = 'step-nav-btn inactive';
+    stepTab2.className = 'step-nav-btn active';
     step1Content.classList.add('hidden');
     step2Content.classList.remove('hidden');
     btnBack.classList.remove('hidden');
-    btnNext.innerHTML = 'Complete <i data-lucide="check" class="w-4 h-4"></i>';
+    btnNext.innerHTML = 'Copy report <i data-lucide="copy" class="w-4 h-4"></i>';
   }
   refreshIcons();
 }
 
 btnNext.addEventListener('click', () => {
   if (currentStep === 1) {
-    inputActiveLayers.value = inputLayers.value;
-    valActiveLayers.innerText = inputLayers.value;
+    setCountPair(inputActiveLayersNum, inputActiveLayers, inputLayersNum.value, LIMITS.layers);
     setStep(2);
     calculate();
   } else {
@@ -561,15 +615,20 @@ stepTab2.addEventListener('click', () => {
 
 function calculate() {
   const fullPallets = parseInt(inputFullPallets.value, 10) || 0;
-  const standardLayers = parseInt(inputLayers.value, 10) || 0;
-  const boxesPerLayer = parseInt(inputBoxes.value, 10) || 0;
+  const standardLayers = readCount(inputLayersNum, inputLayers, LIMITS.layers.min, LIMITS.layers.max);
+  const boxesPerLayer = readCount(inputBoxesNum, inputBoxes, LIMITS.boxes.min, LIMITS.boxes.max);
   const unitsPerBox = parseInt(inputUnits.value, 10) || 0;
-  const activeLayers = parseInt(inputActiveLayers.value, 10) || 0;
+  const activeLayers = readCount(inputActiveLayersNum, inputActiveLayers, LIMITS.layers.min, LIMITS.layers.max);
+  const includeActive = currentStep === 2 ? checkIncludeActive.checked : true;
 
-  const hasMissing = checkMissing.checked;
+  setCountPair(inputLayersNum, inputLayers, standardLayers, LIMITS.layers);
+  setCountPair(inputBoxesNum, inputBoxes, boxesPerLayer, LIMITS.boxes);
+  setCountPair(inputActiveLayersNum, inputActiveLayers, activeLayers, LIMITS.layers);
+
+  const hasMissing = includeActive && checkMissing.checked;
   const missingBoxes = hasMissing ? parseInt(inputMissingCount.value, 10) || 0 : 0;
 
-  const hasPartial = checkPartial.checked;
+  const hasPartial = includeActive && checkPartial.checked;
   const partialUnits = hasPartial ? parseInt(inputPartialUnits.value, 10) || 0 : 0;
 
   inputPartialUnits.max = unitsPerBox - 1;
@@ -583,36 +642,41 @@ function calculate() {
     inputMissingCount.value = maxMissingAllowed;
   }
 
-  valLayers.innerText = standardLayers;
-  valBoxes.innerText = boxesPerLayer;
-  valActiveLayers.innerText = activeLayers;
-
   const boxesPerStandardPallet = standardLayers * boxesPerLayer;
   const unitsPerStandardPallet = boxesPerStandardPallet * unitsPerBox;
   const totalUnitsFromFullPallets = fullPallets * unitsPerStandardPallet;
   const totalBoxesFromFullPallets = fullPallets * boxesPerStandardPallet;
 
   const boxesPerActivePallet = activeLayers * boxesPerLayer;
-  let currentPalletFullBoxes = boxesPerActivePallet - missingBoxes;
-  if (hasPartial) {
-    currentPalletFullBoxes -= 1;
-  }
-  if (currentPalletFullBoxes < 0) currentPalletFullBoxes = 0;
+  let currentPalletFullBoxes = 0;
+  let currentPalletUnits = 0;
+  let activePalletBoxesCount = 0;
+  let currentPalletRatio = 0;
 
-  const currentPalletUnits = currentPalletFullBoxes * unitsPerBox + (hasPartial ? partialUnits : 0);
-  const activePalletBoxesCount = currentPalletFullBoxes + (hasPartial && boxesPerActivePallet - missingBoxes > 0 ? 1 : 0);
+  if (includeActive) {
+    currentPalletFullBoxes = boxesPerActivePallet - missingBoxes;
+    if (hasPartial) currentPalletFullBoxes -= 1;
+    if (currentPalletFullBoxes < 0) currentPalletFullBoxes = 0;
+
+    currentPalletUnits = currentPalletFullBoxes * unitsPerBox + (hasPartial ? partialUnits : 0);
+    activePalletBoxesCount =
+      currentPalletFullBoxes + (hasPartial && boxesPerActivePallet - missingBoxes > 0 ? 1 : 0);
+
+    currentPalletRatio = boxesPerStandardPallet > 0 ? activePalletBoxesCount / boxesPerStandardPallet : 0;
+    if (hasPartial && boxesPerStandardPallet > 0) {
+      const partialRatio = partialUnits / unitsPerBox / boxesPerStandardPallet;
+      currentPalletRatio = currentPalletFullBoxes / boxesPerStandardPallet + partialRatio;
+    }
+  }
 
   const finalTotalBoxes = totalBoxesFromFullPallets + activePalletBoxesCount;
   const finalTotalUnits = totalUnitsFromFullPallets + currentPalletUnits;
-
-  let currentPalletRatio = boxesPerStandardPallet > 0 ? activePalletBoxesCount / boxesPerStandardPallet : 0;
-  if (hasPartial && boxesPerStandardPallet > 0) {
-    const partialRatio = partialUnits / unitsPerBox / boxesPerStandardPallet;
-    currentPalletRatio = currentPalletFullBoxes / boxesPerStandardPallet + partialRatio;
-  }
-  const finalTotalPallets = (fullPallets + currentPalletRatio).toFixed(2);
+  const finalTotalPallets = includeActive
+    ? (fullPallets + currentPalletRatio).toFixed(2)
+    : String(fullPallets);
 
   const breakdownData = {
+    includeActive,
     fullPallets,
     standardLayers,
     boxesPerLayer,
@@ -645,27 +709,38 @@ function calculate() {
 
   renderFullPalletsStrip(fullPallets, standardLayers, boxesPerLayer);
   updatePresetActiveStates();
+  if (currentStep === 2) setIncludeActive(checkIncludeActive.checked);
 
-  const displayLayers = currentStep === 1 ? standardLayers : activeLayers;
-  const displayMissing = currentStep === 1 ? 0 : missingBoxes;
-  const displayPartial = currentStep === 1 ? false : hasPartial;
-  const displayPartialUnits = currentStep === 1 ? 0 : partialUnits;
+  const showActivePreview = includeActive && currentStep === 2;
+  const displayLayers = showActivePreview ? activeLayers : standardLayers;
+  const displayMissing = showActivePreview ? missingBoxes : 0;
+  const displayPartial = showActivePreview && hasPartial;
+  const displayPartialUnits = showActivePreview ? partialUnits : 0;
+
+  const hidePreview = currentStep === 2 && !includeActive && fullPallets === 0;
+  previewEmptyMsg?.classList.toggle('hidden', !hidePreview);
+  threeContainer?.classList.toggle('hidden', hidePreview || currentViewMode === '2d');
+  twodContainer?.classList.toggle('hidden', hidePreview || currentViewMode === '3d');
 
   if (viewModeTitle) {
-    if (currentViewMode === '3d') {
-      if (currentStep === 1) {
-        viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> Standard Preview (Drag to rotate)';
+    if (hidePreview) {
+      viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span> No preview';
+    } else if (currentViewMode === '3d') {
+      if (currentStep === 1 || !includeActive) {
+        viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> Standard preview';
       } else {
-        viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Active Pallet 3D (Drag to rotate)';
+        viewModeTitle.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Active #${fullPallets + 1}`;
       }
     } else {
-      viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> 2D Grid Layout';
+      viewModeTitle.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> 2D grid';
     }
   }
 
+  if (hidePreview) return;
+
   if (currentViewMode === '3d' && webglActive && scene && palletGroup) {
     rebuild3DBoxes(displayLayers, boxesPerLayer, displayMissing, displayPartial, displayPartialUnits, unitsPerBox);
-  } else {
+  } else if (!hidePreview) {
     renderFallback2D(displayLayers, boxesPerLayer, displayMissing, displayPartial, displayPartialUnits, unitsPerBox);
   }
 }
@@ -673,14 +748,15 @@ function calculate() {
 function renderFallback2D(layers, boxesPerLayer, missingBoxes, hasPartial, partialUnits, unitsPerBox) {
   twodContainer.innerHTML = '';
   const gridContainer = document.createElement('div');
-  gridContainer.className = 'w-full max-w-[280px] flex flex-col-reverse gap-2 bg-slate-900/60 p-4 rounded-xl border border-slate-800 shadow-xl mx-auto';
+  gridContainer.className = 'w-full max-w-full overflow-x-auto flex flex-col-reverse gap-2 bg-slate-900/60 p-4 rounded-xl border border-slate-800 shadow-xl mx-auto';
   for (let l = 0; l < layers; l++) {
     const isTopLayer = l === layers - 1;
     const layerRow = document.createElement('div');
     layerRow.className = 'flex gap-1.5 justify-center';
     for (let i = 0; i < boxesPerLayer; i++) {
       const box = document.createElement('div');
-      box.className = 'w-9 h-9 rounded border flex items-center justify-center text-[10px] font-black transition-all shadow-md';
+      const boxSize = boxesPerLayer > 12 ? 'w-6 h-6 text-[8px]' : boxesPerLayer > 8 ? 'w-7 h-7 text-[9px]' : 'w-9 h-9 text-[10px]';
+      box.className = `${boxSize} rounded border flex items-center justify-center font-black transition-all shadow-md shrink-0`;
       const isMissing = isTopLayer && i >= boxesPerLayer - missingBoxes;
       const isPartial = isTopLayer && hasPartial && i === boxesPerLayer - missingBoxes - 1;
       if (isMissing) {
@@ -771,9 +847,9 @@ rangeFullPallets.addEventListener('input', (e) => {
   inputFullPallets.value = e.target.value;
   calculate();
 });
-inputLayers.addEventListener('input', calculate);
-inputBoxes.addEventListener('input', calculate);
-inputActiveLayers.addEventListener('input', calculate);
+bindCountPair(inputLayersNum, inputLayers, LIMITS.layers, calculate);
+bindCountPair(inputBoxesNum, inputBoxes, LIMITS.boxes, calculate);
+bindCountPair(inputActiveLayersNum, inputActiveLayers, LIMITS.layers, calculate);
 inputUnits.addEventListener('input', (e) => {
   inputUnitsNum.value = e.target.value;
   calculate();
@@ -794,6 +870,13 @@ checkPartial.addEventListener('change', (e) => {
   calculate();
 });
 inputPartialUnits.addEventListener('input', calculate);
+
+toggleIncludeActive?.addEventListener('click', () => {
+  setIncludeActive(!checkIncludeActive.checked);
+  calculate();
+});
+
+checkIncludeActive?.addEventListener('change', calculate);
 
 btnShowCalc?.addEventListener('click', () => {
   calcBreakdownOpen = !calcBreakdownOpen;
@@ -819,20 +902,20 @@ calcBreakdownContent?.addEventListener('input', (e) => {
   }
 
   if (bind === 'standardLayers') {
-    inputLayers.value = String(Math.max(1, Math.min(6, v)));
-    inputLayers.dispatchEvent(new Event('input'));
+    setCountPair(inputLayersNum, inputLayers, v, LIMITS.layers);
+    calculate();
     return;
   }
 
   if (bind === 'activeLayers') {
-    inputActiveLayers.value = String(Math.max(1, Math.min(6, v)));
-    inputActiveLayers.dispatchEvent(new Event('input'));
+    setCountPair(inputActiveLayersNum, inputActiveLayers, v, LIMITS.layers);
+    calculate();
     return;
   }
 
   if (bind === 'boxesPerLayer') {
-    inputBoxes.value = String(Math.max(4, Math.min(9, v)));
-    inputBoxes.dispatchEvent(new Event('input'));
+    setCountPair(inputBoxesNum, inputBoxes, v, LIMITS.boxes);
+    calculate();
     return;
   }
 
@@ -863,9 +946,8 @@ calcBreakdownContent?.addEventListener('input', (e) => {
     partialControlWrap.classList.toggle('opacity-40', !checkPartial.checked);
     partialControlWrap.classList.toggle('pointer-events-none', !checkPartial.checked);
     inputPartialUnits.value = String(Math.max(1, Math.min(parseInt(inputPartialUnits.max, 10) || 399, next || 1)));
-    if (!checkPartial.checked) {
-      inputPartialUnits.value = '1';
-    }
+    if (!checkPartial.checked) inputPartialUnits.value = '1';
+    if (next > 0 && !checkIncludeActive.checked) setIncludeActive(true);
     calculate();
   }
 });
@@ -879,7 +961,8 @@ async function showToast() {
 }
 
 btnCopyReport.addEventListener('click', async () => {
-  const textToCopy = `PALLET INVENTORY REPORT\nTotal Units: ${resTotalUnits.innerText}`;
+  const mode = checkIncludeActive.checked ? 'Full + Active' : 'Full only';
+  const textToCopy = `PALLET INVENTORY REPORT\nMode: ${mode}\nTotal Pallets: ${resTotalPallets.innerText}\nTotal Boxes: ${resTotalBoxes.innerText}\nTotal Units: ${resTotalUnits.innerText}`;
   try {
     await navigator.clipboard.writeText(textToCopy);
   } catch {
@@ -898,6 +981,7 @@ btnResetFields.addEventListener('click', () => {
 });
 
 refreshIcons();
+setIncludeActive(true);
 init3D();
 calculate();
 setStep(1);
