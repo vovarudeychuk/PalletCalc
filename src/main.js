@@ -81,6 +81,7 @@ const inputActiveLayersNum = document.getElementById('input-active-layers-num');
 const LIMITS = {
   layers: { min: 1, max: 9999, sliderDefaultMax: 12 },
   boxes: { min: 1, max: 9999, sliderDefaultMax: 12 },
+  units: { min: 1, max: 9999, sliderDefaultMax: 400 },
 };
 
 const checkMissing = document.getElementById('check-missing');
@@ -191,11 +192,11 @@ function renderCalcBreakdownCompact(data) {
 
   const fullPart =
     fullPallets > 0
-      ? `${chip('fullPallets', fullPallets, 0, 9999)} ${icon('x')} (${chip('standardLayers', standardLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 400)})`
+      ? `${chip('fullPallets', fullPallets, 0, 9999)} ${icon('x')} (${chip('standardLayers', standardLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 9999)})`
       : '';
 
   const activePart = includeActive
-    ? `<span class="text-slate-500">${icon('plus')}</span> (${chip('activeLayers', activeLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('minus')} ${chip('missingBoxes', missingVal, 0, 9999)} ${icon('minus')} <span class="text-slate-300 font-black">${partialSlot}</span>) ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 400)} ${icon('plus')} ${chip('partialUnits', partialVal, 0, Math.max(0, unitsPerBox - 1))}`
+    ? `<span class="text-slate-500">${icon('plus')}</span> (${chip('activeLayers', activeLayers, 1, 9999)} ${icon('layers')} ${icon('x')} ${chip('boxesPerLayer', boxesPerLayer, 1, 9999)} ${icon('box')} ${icon('minus')} ${chip('missingBoxes', missingVal, 0, 9999)} ${icon('minus')} <span class="text-slate-300 font-black">${partialSlot}</span>) ${icon('x')} ${chip('unitsPerBox', unitsPerBox, 1, 9999)} ${icon('plus')} ${chip('partialUnits', partialVal, 0, Math.max(0, unitsPerBox - 1))}`
     : '';
 
   calcBreakdownContent.innerHTML = `
@@ -246,7 +247,7 @@ function updatePresetActiveStates() {
     btn.classList.toggle('active', boxesValue === parseInt(btn.dataset.presetBoxes, 10));
   });
 
-  const unitsValue = parseInt(inputUnits.value, 10);
+  const unitsValue = readCount(inputUnitsNum, inputUnits, LIMITS.units.min, LIMITS.units.max);
   document.querySelectorAll('.preset-units-btn').forEach((btn) => {
     btn.classList.toggle('active', unitsValue === parseInt(btn.dataset.presetUnits, 10));
   });
@@ -329,9 +330,8 @@ document.querySelectorAll('.preset-boxes-btn').forEach((btn) => {
 
 document.querySelectorAll('.preset-units-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    inputUnits.value = btn.dataset.presetUnits;
-    inputUnitsNum.value = btn.dataset.presetUnits;
-    inputUnits.dispatchEvent(new Event('input'));
+    setCountPair(inputUnitsNum, inputUnits, btn.dataset.presetUnits, LIMITS.units);
+    calculate();
   });
 });
 
@@ -617,13 +617,14 @@ function calculate() {
   const fullPallets = parseInt(inputFullPallets.value, 10) || 0;
   const standardLayers = readCount(inputLayersNum, inputLayers, LIMITS.layers.min, LIMITS.layers.max);
   const boxesPerLayer = readCount(inputBoxesNum, inputBoxes, LIMITS.boxes.min, LIMITS.boxes.max);
-  const unitsPerBox = parseInt(inputUnits.value, 10) || 0;
+  const unitsPerBox = readCount(inputUnitsNum, inputUnits, LIMITS.units.min, LIMITS.units.max);
   const activeLayers = readCount(inputActiveLayersNum, inputActiveLayers, LIMITS.layers.min, LIMITS.layers.max);
   const includeActive = currentStep === 2 ? checkIncludeActive.checked : true;
 
   setCountPair(inputLayersNum, inputLayers, standardLayers, LIMITS.layers);
   setCountPair(inputBoxesNum, inputBoxes, boxesPerLayer, LIMITS.boxes);
   setCountPair(inputActiveLayersNum, inputActiveLayers, activeLayers, LIMITS.layers);
+  setCountPair(inputUnitsNum, inputUnits, unitsPerBox, LIMITS.units);
 
   const hasMissing = includeActive && checkMissing.checked;
   const missingBoxes = hasMissing ? parseInt(inputMissingCount.value, 10) || 0 : 0;
@@ -631,9 +632,13 @@ function calculate() {
   const hasPartial = includeActive && checkPartial.checked;
   const partialUnits = hasPartial ? parseInt(inputPartialUnits.value, 10) || 0 : 0;
 
-  inputPartialUnits.max = unitsPerBox - 1;
+  inputPartialUnits.max = Math.max(0, unitsPerBox - 1);
+  if (unitsPerBox <= 1) {
+    checkPartial.checked = false;
+    partialControlWrap.classList.add('opacity-40', 'pointer-events-none');
+  }
   if (parseInt(inputPartialUnits.value, 10) >= unitsPerBox) {
-    inputPartialUnits.value = unitsPerBox - 1;
+    inputPartialUnits.value = Math.max(0, unitsPerBox - 1);
   }
 
   const maxMissingAllowed = boxesPerLayer;
@@ -850,14 +855,7 @@ rangeFullPallets.addEventListener('input', (e) => {
 bindCountPair(inputLayersNum, inputLayers, LIMITS.layers, calculate);
 bindCountPair(inputBoxesNum, inputBoxes, LIMITS.boxes, calculate);
 bindCountPair(inputActiveLayersNum, inputActiveLayers, LIMITS.layers, calculate);
-inputUnits.addEventListener('input', (e) => {
-  inputUnitsNum.value = e.target.value;
-  calculate();
-});
-inputUnitsNum.addEventListener('input', (e) => {
-  inputUnits.value = e.target.value;
-  calculate();
-});
+bindCountPair(inputUnitsNum, inputUnits, LIMITS.units, calculate);
 checkMissing.addEventListener('change', (e) => {
   missingControlWrap.classList.toggle('opacity-40', !e.target.checked);
   missingControlWrap.classList.toggle('pointer-events-none', !e.target.checked);
@@ -920,10 +918,8 @@ calcBreakdownContent?.addEventListener('input', (e) => {
   }
 
   if (bind === 'unitsPerBox') {
-    const next = Math.max(1, Math.min(400, v));
-    inputUnits.value = String(next);
-    inputUnitsNum.value = String(next);
-    inputUnits.dispatchEvent(new Event('input'));
+    setCountPair(inputUnitsNum, inputUnits, v, LIMITS.units);
+    calculate();
     return;
   }
 
